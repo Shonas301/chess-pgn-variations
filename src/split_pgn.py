@@ -1,70 +1,56 @@
 import chess.pgn
 import click
+from copy import deepcopy
 
 VARIATIONS = []
 
 
-class VariationTracker(object):
-    def __init__(self, initial_move_list=[]):
-        self.moves = initial_move_list
+def traverse(node, path=[], collector=[]):
+    path.append(node)
+    if node.is_end():
+        board = chess.Board()
+        move_list = []
+        for child in path:
+            move_list.append(child)
+        collector.append(move_list)
+        # print(board.variation_san(move_list), "*\n")
+        path.pop()
+    else:
+        for child in node.variations:
+            traverse(child, path, collector=collector)
+        path.pop()
 
-    def append(self, move):
-        self.moves.append(move)
 
-
-class VariationVisitor(chess.pgn.BaseVisitor):
-    variation_indent = ""
-    main_variation = []
-    variation_stack = []
-    variations = []
-
-    def visit_move(self, board, move):
-        if len(self.variation_stack):
-            variation = self.variation_stack.pop()
-            variation.append(move)
-            self.variation_stack.append(variation)
-        else:
-            self.main_variation.append(move)
-
-    def begin_variation(self):
-        if len(self.variation_stack) != 0:
-            moves = [
-                moves
-                for variation in self.variation_stack
-                for moves in variation.moves[:-1]
-            ]
-            moves = list(dict.fromkeys(moves))
-        else:
-            moves = self.main_variation[:-1]
-        variation = VariationTracker(moves)
-        self.variation_stack.append(variation)
-
-    def end_variation(self):
-        # print("end variation")
-        self.variation_indent = self.variation_indent[:-2]
-        variation = self.variation_stack.pop()
-        VARIATIONS.append(variation)
-        self.variations.append(variation)
-
-    def result(self):
-        return self.variations
+def save_line(line, headers, num, file_path):
+    game_line = chess.pgn.Game()
+    game_line.headers = deepcopy(headers)
+    game_line.headers["White"] += f"-{num}"
+    game_line.headers["Black"] += f"-{num}"
+    first_node = line[0]
+    next_move = game_line.add_variation(first_node.move)
+    next_move.comment = first_node.comment
+    for move in line[1:]:
+        next_move = next_move.add_variation(move.move)
+        next_move.comment = move.comment
+    print("?")
+    print(game_line, file=open(file_path, "a"), end="\n\n")
 
 
 def seperate_variations_from_pgn(pgn_file):
     pgn = open(pgn_file)
-    while variations := chess.pgn.read_game(pgn, Visitor=VariationVisitor):
-        variation_file_name = f"./{pgn_file.strip('.pgn')}_variations.pgn"
-        board = chess.Board()
-        for variation in variations:
-            game = chess.pgn.Game()
-            next_move = game.add_variation(variation.moves[0])
-            for move in variation.moves[1:]:
-                next_move = next_move.add_variation(move)
-            print(game, file=open(variation_file_name, "a"), end="\n\n")
+    while base_game := chess.pgn.read_game(pgn):
+        for first_move in base_game.variations:
+            collector = []
+            traverse(first_move, [], collector=collector)
+            i = 0
+            variation_file_name = f"{pgn_file.strip('.pgn')}_variations.pgn"
+            for line in collector:
+                i += 1
+                save_line(line, base_game.headers, i, variation_file_name)
 
 
 @click.command()
-@click.argument("pgn_file", type=click.Path)
+@click.argument("pgn_file", type=click.Path(exists=True, resolve_path=True))
 def main(pgn_file):
     seperate_variations_from_pgn(pgn_file)
 
