@@ -6,6 +6,7 @@ VARIATIONS = []
 
 
 def traverse(node, path=[], collector=[]):
+    print(node)
     path.append(node)
     if node.is_end():
         board = chess.Board()
